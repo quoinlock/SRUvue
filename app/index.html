@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>University MARCXML Lookup</title>
+    <style>
+        body { font-family: sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-weight: bold; margin-bottom: 0.5srem; }
+        input, select, button { width: 100%; padding: 0.5rem; font-size: 1rem; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #007bff; color: white; border: none; cursor: pointer; margin-top: 1rem; }
+        button:hover { background: #0056b3; }
+        #results { margin-top: 2rem; background: #f8f9fa; padding: 1rem; border: 1px solid #ddd; white-space: pre-wrap; font-family: monospace; font-size: 0.85rem; max-height: 500px; overflow-y: auto; }
+        .error { color: #dc3545; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h2>Academic Library ISBN Lookup (SRU)</h2>
+    
+    <div class="form-group">
+        <label for="isbn">ISBN (10 or 13):</label>
+        <input type="text" id="isbn" placeholder="e.g., 9780743273565" value="9780743273565">
+    </div>
+
+    <div class="form-group">
+        <label for="university">University Catalog:</label>
+        <select id="university"></select>
+    </div>
+
+    <button onclick="performSearch()">Search Catalog</button>
+
+    <div id="results">Records will appear here...</div>
+
+    <script>
+        // Top 50 (approx) US University Alma Institution Codes
+        // Pattern: https://[code].alma.exlibrisgroup.com/view/sru/[code]
+        const universities = [
+            { name: "Library of Congress (Default)", code: "lcdb", domain: "lx2.loc.gov" },
+            { name: "Harvard University", code: "01HVD_INST", domain: "hvd.alma.exlibrisgroup.com" },
+            { name: "MIT", code: "01MIT_INST", domain: "mit.alma.exlibrisgroup.com" },
+            { name: "Yale University", code: "01YALE_INST", domain: "yale.alma.exlibrisgroup.com" },
+            { name: "Princeton University", code: "01PRI_INST", domain: "princeton.alma.exlibrisgroup.com" },
+            { name: "University of Pennsylvania", code: "01UPENN_INST", domain: "upenn.alma.exlibrisgroup.com" },
+            { name: "Columbia University", code: "01COL_INST", domain: "columbia.alma.exlibrisgroup.com" },
+            { name: "Cornell University", code: "01CORNELL_INST", domain: "cornell.alma.exlibrisgroup.com" },
+            { name: "University of Chicago", code: "01UCO_INST", domain: "uchicago.alma.exlibrisgroup.com" },
+            { name: "UC Berkeley", code: "01UCS_BER", domain: "berkeley.alma.exlibrisgroup.com" },
+            { name: "UCLA", code: "01UCS_LAL", domain: "ucla.alma.exlibrisgroup.com" },
+            { name: "Stanford University", code: "01SUL_INST", domain: "stanford.alma.exlibrisgroup.com" },
+            { name: "Duke University", code: "01DUKE_INST", domain: "duke.alma.exlibrisgroup.com" },
+            { name: "Johns Hopkins", code: "01JHU_INST", domain: "jhu.alma.exlibrisgroup.com" },
+            { name: "Northwestern University", code: "01NWU_INST", domain: "northwestern.alma.exlibrisgroup.com" },
+            { name: "University of Michigan", code: "01UML_INST", domain: "umich.alma.exlibrisgroup.com" },
+            { name: "NYU", code: "01NYU_INST", domain: "nyu.alma.exlibrisgroup.com" }
+        ];
+
+        // Populate Dropdown
+        const select = document.getElementById('university');
+        universities.forEach((uni, index) => {
+            const opt = document.createElement('option');
+            opt.value = index;
+            opt.innerHTML = uni.name;
+            select.appendChild(opt);
+        });
+
+        async function performSearch() {
+            const isbnInput = document.getElementById('isbn').value.replace(/[- ]/g, "");
+            const uni = universities[select.value];
+            const resultsDiv = document.getElementById('results');
+            
+            resultsDiv.innerHTML = "Searching...";
+
+            // 1. Construct the SRU URL
+            // LOC uses a different domain structure than Alma universities
+            let baseUrl = (uni.code === 'lcdb') 
+                ? `https://${uni.domain}/sru/${uni.code}`
+                : `https://${uni.domain}/view/sru/${uni.code}`;
+
+            const params = new URLSearchParams({
+                operation: 'searchRetrieve',
+                version: '1.2',
+                query: `alma.isbn=${isbnInput}`,
+                maximumRecords: '1',
+                recordSchema: 'marcxml'
+            });
+
+            try {
+                // Note: Browser CORS may block direct requests to some library servers.
+                // In a production app, you often need a small proxy or use a server-side fetch.
+                const response = await fetch(`${baseUrl}?${params.toString()}`);
+                
+                if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+                
+                const xmlText = await response.text();
+                
+                // 2. Parse and Display
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+                
+                // Check if we actually found a record
+                const numRecords = xmlDoc.getElementsByTagName("numberOfRecords")[0]?.textContent;
+                
+                if (numRecords === "0" || !numRecords) {
+                    resultsDiv.innerHTML = `<span class="error">No records found for ISBN ${isbnInput} at ${uni.name}.</span>`;
+                } else {
+                    // Escape XML for display
+                    resultsDiv.textContent = xmlText;
+                }
+            } catch (err) {
+                resultsDiv.innerHTML = `<span class="error">Error: ${err.message}. <br><small>(Note: This may be a CORS restriction. Library SRU servers often require requests to come from a server, not a browser.)</small></span>`;
+            }
+        }
+    </script>
+</body>
+</html>
